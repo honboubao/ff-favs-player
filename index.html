@@ -1,0 +1,216 @@
+<html>
+<head>
+  <script src="https://code.jquery.com/jquery-3.1.0.min.js"></script>
+  <script src="https://raw.githubusercontent.com/aadsm/jsmediatags/master/dist/jsmediatags.min.js"></script>
+  <title>mplayer</title>
+  <style>
+    .hilite {
+      background: lightblue;
+    }
+  </style>
+</head>
+<body>
+  <button onclick="playNext()">&gt;&gt;</button>
+  <br>
+  <div id="ytplayer"></div>
+  <div id="mp3player">
+    <div id="title"></div>
+    <audio id="audio" controls>
+      <source id="audioSource" type="audio/mpeg">
+      Your browser does not support the audio element.
+    </audio> 
+  </div>
+  
+  <br>
+  <div>
+    <input type="text" id="search-field">
+    <div id="search-results">
+    
+    </div>
+  </div>
+  
+  <script>
+    RegExp.escape = function(text) {
+      return text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
+    };
+  
+    $('#search-field').on('input', function () {
+      var input = this.value.trim();
+      if (!input) {
+        $('#search-results').html("");
+        return;
+      }
+      
+      var keywords = input.split(/\s+/).map(k => RegExp.escape(k));
+      var regex = new RegExp('((' + keywords.join(')|(') + '))', 'gui');
+      keywords = keywords.map(k => new RegExp(k, 'ui'));
+      var ul = $('<ul>');
+      
+      function getLi(title) {
+        var hlString = title.replace(regex, '<span class="hilite">$&</span>');
+        if (hlString != title && keywords.every(k => title.match(k))) {
+          return $('<li>').html(hlString)
+        }
+        return null;
+      }
+      function clear() {
+        //$('#search-results').html("");
+        //$('#search-field').val("");        
+      }
+      
+      files.forEach(f => {
+        var li = getLi(f);
+        if (li) {
+          li.click(() => {
+            clear();
+            playFile(f);
+          })
+          .appendTo(ul);
+        }
+      });
+      
+      bookmarks.forEach(b => {
+        var li = getLi(b.title);
+        if (li) {
+          li.click(() => {
+            clear();
+            playBookmark(b);
+          })
+          .appendTo(ul);
+        }
+      });
+      $('#search-results').html(ul);
+    });
+  
+    var bookmarks;
+    $.get('api/list-bookmarks').then(data => bookmarks = data);
+    var files;
+    $.get('api/list-local').then(data => files = data);
+
+
+    var tag = document.createElement('script');
+    tag.src = "https://www.youtube.com/iframe_api";
+    var firstScriptTag = document.getElementsByTagName('script')[0];
+    firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+
+    var audio = document.getElementById('audio');
+    var source = document.getElementById('audioSource');
+    
+    audio.addEventListener('ended', playNext);
+    audio.addEventListener('error', () => {
+      console.log("error");
+    playNext();
+    
+    });
+    audio.addEventListener('stalled', () => {
+      console.log("stalled");
+    
+    });
+    audio.addEventListener('ended', () => {
+      console.log("ended");
+    });
+    audio.addEventListener('suspend', () => {
+      console.log("suspend");
+    });
+    audio.addEventListener('emptied', () => {
+      console.log("emptied");
+    });
+    audio.addEventListener('pause', () => {
+      console.log("pause");
+    });
+    audio.addEventListener('play', () => {
+      console.log("play");
+    });
+    audio.addEventListener('stalled', () => {
+      console.log("stalled");
+    });
+    audio.addEventListener('abort', () => {
+      console.log("abort");
+    });
+    
+    var player;
+    function onYouTubeIframeAPIReady() {
+      player = new YT.Player('ytplayer', {
+        height: '390',
+        width: '640',
+        events: {
+          'onStateChange': function onstatechange(e) {
+            if (e.data == YT.PlayerState.ENDED) {
+              playNext();
+            }
+          },
+          'onError': playNext
+        }
+      });
+    }
+    
+    function getVideoId(url) {
+      return url.split("v=")[1].split("&")[0];
+    }
+    
+    function getRandom(list) {
+      return list[Math.floor(Math.random() * list.length)];
+    }
+    
+    function toBase64(byteArray) {
+      return btoa([].reduce.call(new Uint8Array(byteArray), (p,c) => p+String.fromCharCode(c), ''));
+    }
+    
+    function playBookmark(bookmark) {
+      stop();
+      $('#mp3player').hide();
+      $('#ytplayer').show();
+      var videoId = getVideoId(bookmark.url);
+      player.loadVideoById(videoId);
+      
+    }
+    function playRandomBookmark() {
+      playBookmark(getRandom(bookmarks));
+    }
+    
+    function playFile(file) {
+      stop();
+      $('#ytplayer').hide();
+      $('#mp3player').show();
+      source.src = file.replace(/#/g, '%23');
+      $('#title').html(file);
+      jsmediatags.read(location.origin + file, {
+        onSuccess: function(tag) {
+          var t = tag.tags;
+          var imgTag = "";
+          if (t.picture) {
+            data = toBase64(t.picture.data);
+            imgTag = `<img width="300" src="data:${t.picture.format};base64,${data}">`;
+          }
+          $('title').html(`${t.title} - ${t.artist}`);
+          $('#title').html(`${t.artist} - ${t.title} [${t.album}] <br> ${imgTag} <br> ${file}`);
+        },
+        onError: function(error) {
+          $('#title').html(file);
+        }
+      });
+      audio.load();
+      audio.play();
+    }
+    function playRandomFile() {
+      playFile(getRandom(files));
+    }
+    
+    function playNext() {
+      stop();
+      if (Math.random() < bookmarks.length / (bookmarks.length + files.length))
+        playRandomBookmark();
+       else
+        playRandomFile();
+    }
+    
+    function stop() {
+      audio.pause();
+      player.stopVideo();
+    }
+    
+  </script>
+
+<body>
+</html>
