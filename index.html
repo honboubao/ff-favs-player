@@ -2,10 +2,14 @@
 <head>
   <script type="text/javascript" src="./vendor/jquery-3.1.0.min.js"></script>
   <script type="text/javascript" src="./vendor/jsmediatags.min.js"></script>
-  <title>mplayer</title>
+  <title>fffp</title>
   <style>
     .hilite {
       background: lightblue;
+    }
+    #queue > ol {
+      height: 100px;
+      overflow-y: auto;
     }
   </style>
 </head>
@@ -23,16 +27,19 @@
   
   <br>
   <div>
-    <input type="text" id="search-field">
-    <div id="search-results">
-    
-    </div>
+    Queue:
+    <div id="queue"><ol></ol></div>
+    <br>
+    Search: <input type="text" id="search-field">
+    <div id="search-results"></div>
   </div>
   
   <script>
     RegExp.escape = function(text) {
       return text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
     };
+    
+    var queue =[];
   
     $('#search-field').on('input', function () {
       var input = this.value.trim();
@@ -46,37 +53,38 @@
       keywords = keywords.map(k => new RegExp(k, 'ui'));
       var ul = $('<ul>');
       
-      function getLi(title) {
+      function getLi(title, bookmarkOrFile) {
         var hlString = title.replace(regex, '<span class="hilite">$&</span>');
         if (hlString != title && keywords.every(k => title.match(k))) {
-          return $('<li>').html(hlString)
+          return $('<li>')
+          .append(hlString + ' ')
+          .append($('<a>').attr({ href: '#' }).text('play now').click(function() {
+            play(bookmarkOrFile);
+            return false;
+          }))
+          .append(' ')
+          .append($('<a>').attr({ href: '#' }).text('queue next').click(function() {
+            queueNext(bookmarkOrFile);
+            return false;
+          }))
+          .click(function() {
+            enqueue(bookmarkOrFile);
+          });
         }
         return null;
       }
-      function clear() {
-        //$('#search-results').html("");
-        //$('#search-field').val("");        
-      }
-      
+
       files.forEach(f => {
-        var li = getLi(f);
+        var li = getLi(f, f);
         if (li) {
-          li.click(() => {
-            clear();
-            playFile(f);
-          })
-          .appendTo(ul);
+          li.appendTo(ul);
         }
       });
       
       bookmarks.forEach(b => {
-        var li = getLi(b.title);
+        var li = getLi(b.title, b);
         if (li) {
-          li.click(() => {
-            clear();
-            playBookmark(b);
-          })
-          .appendTo(ul);
+          li.appendTo(ul);
         }
       });
       $('#search-results').html(ul);
@@ -100,12 +108,10 @@
     audio.addEventListener('ended', playNext);
     audio.addEventListener('error', () => {
       console.log("error");
-    playNext();
-    
+      playNext();
     });
     audio.addEventListener('stalled', () => {
       console.log("stalled");
-    
     });
     audio.addEventListener('ended', () => {
       console.log("ended");
@@ -157,12 +163,65 @@
       return btoa([].reduce.call(new Uint8Array(byteArray), (p,c) => p+String.fromCharCode(c), ''));
     }
     
+    function renderQueue() {
+      var scrollPos = $('#queue ol').scrollTop() || 0;
+      var ol = $('<ol>');
+      queue.forEach((item, i) => {
+        ol.append(
+          $('<li>')
+          .append($('<a>').attr({ href: '#' }).text('remove').click(function() {
+            dequeue(i);
+            return false;
+          }))
+          .append(' ')
+          .append($('<a>').attr({ href: '#' }).text('bump').click(function() {
+            queueNext(dequeue(i));
+            return false;
+          }))
+          .append(' ' + (item.title || item))          
+          .click(function() {
+            play(dequeue(i));
+          })
+        );
+      });
+      $('#queue').html(ol);
+      $('#queue ol').scrollTop(scrollPos)
+    }
+    
+    function dequeue(index) {
+      var index = index || 0;
+      var [bookmarkOrFile] = queue.splice(index, 1);
+      renderQueue();
+      return bookmarkOrFile;
+    }
+    
+    function enqueue(bookmarkOrFile) {
+      queue.push(bookmarkOrFile);
+      renderQueue();
+      $('#queue ol').scrollTop(10000000)
+    }
+    
+    function queueNext(bookmarkOrFile) {
+      queue.unshift(bookmarkOrFile);
+      renderQueue();
+      $('#queue ol').scrollTop(10000000)
+    }
+    
+    function play(bookmarkOrFile) {
+      if (bookmarkOrFile.url) {
+        playBookmark(bookmarkOrFile);
+      } else {
+        playFile(bookmarkOrFile);
+      }
+    }
+    
     function playBookmark(bookmark) {
       stop();
       $('#mp3player').hide();
       $('#ytplayer').show();
       var videoId = getVideoId(bookmark.url);
-      player.loadVideoById(videoId);
+      if (player)
+        player.loadVideoById(videoId);
       
     }
     function playRandomBookmark() {
@@ -183,7 +242,7 @@
             data = toBase64(t.picture.data);
             imgTag = `<img width="300" src="data:${t.picture.format};base64,${data}">`;
           }
-          $('title').html(`${t.title} - ${t.artist}`);
+          $('title').html(`fffp - ${t.title} - ${t.artist}`);
           $('#title').html(`${t.artist} - ${t.title} [${t.album}] <br> ${imgTag} <br> ${file}`);
         },
         onError: function(error) {
@@ -199,15 +258,18 @@
     
     function playNext() {
       stop();
-      if (Math.random() < bookmarks.length / (bookmarks.length + files.length))
+      if (queue.length > 0)
+        play(dequeue());
+      else if (player && Math.random() < bookmarks.length / (bookmarks.length + files.length))
         playRandomBookmark();
-       else
+      else
         playRandomFile();
     }
     
     function stop() {
       audio.pause();
-      player.stopVideo();
+      if (player)
+        player.stopVideo();
     }
     
   </script>
